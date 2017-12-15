@@ -1,0 +1,150 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Seher"
+date: "December 11, 2017"
+output:  
+      html_document:  
+        keep_md: yes 
+---
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Prediction Assignment Writeup
+
+###Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways
+
+### Introduction
+
+In this project, we will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participant They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The five ways are exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). Only Class A corresponds to correct performance. The goal of this project is to predict the manner in which they did the exercise, i.e., Class A to E.
+
+#### Data processing and cleaning
+
+First, we download the data as well as necessary R packages.
+
+```{r message=FALSE}
+library(caret); library(rattle); library(rpart); library(rpart.plot)
+library(randomForest); library(repmis)
+
+training <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"),na.strings = c("NA", ""),header=TRUE)
+dim(training)
+str(training[,1:20])
+
+testing <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"),na.strings = c("NA", "") ,header=TRUE)
+dim(testing)
+str(testing[,1:20])
+
+
+```
+
+The training dataset has 19622 observations and 160 variables, and the testing data set contains 20 observations along with 160 variables.Notice that many NA values and blank values appear, so we remove
+them first seven variables provide information about the participants. It is quanlitive infor, we remove them, too. The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. Below we do some housekeeping.
+
+```{r}
+
+training <- training[, colSums(is.na(training)) == 0]
+testing <- testing[, colSums(is.na(testing)) == 0]
+#We also remove the first seven predictors since these variables have little predicting power for the outcome classe.
+
+trainData<- training[, -c(1:7)]
+dim(trainData)
+testData <- testing[, -c(1:7)]
+dim(testData)
+```
+
+The cleaned data sets trainData and testData both have 53 columns with the same first 52 variables and the last variable classe and  problem_id individually. trainData has 19622 rows while testData has 20 rows.
+
+In order to get out-of-sample errors, we split the cleaned training set trainData into a training set (train, 70%) for prediction and a validation set (valid 30%) to compute the out-of-sample errors.
+
+```{r}
+set.seed(7826) 
+inTrain <- createDataPartition(trainData$classe, p = 0.7, list = FALSE)
+train1 <- trainData[inTrain, ]
+valid1 <- trainData[-inTrain, ]
+
+```
+
+
+### Prediction Algorithms
+
+We use classification trees and random forests to predict the outcome.
+
+#### Classification trees
+
+Here we consider 5-fold cross validation while the default is 10 in order to save computing time. Secondly, we do not transform any variables.
+
+You can also embed plots, for example:
+
+```{r}
+library(e1071)
+control <- trainControl(method = "cv", number = 5)
+fit_rpart <- train(classe ~ ., data = train1, method = "rpart", 
+                   trControl = control)
+print(fit_rpart, digits = 4)
+
+fancyRpartPlot(fit_rpart$finalModel)
+
+# predict outcomes using validation set
+predict_rpart <- predict(fit_rpart, valid1)
+# Show prediction result
+(conf_rpart <- confusionMatrix(valid1$classe, predict_rpart))
+
+
+(accuracy_rpart <- conf_rpart$overall[1])
+```
+
+From the confusion matrix, the accuracy rate is 0.5, and so the out-of-sample error rate is 0.5. Using classification tree does not predict the outcome classe very well.
+
+
+#### Random Forests
+
+```{r}
+library(e1071)
+library(caret)
+set.seed(12345)
+fit_rf <- randomForest(classe ~ ., data=train1)
+predictionB1 <- predict(fit_rf, valid1, type = "class")
+cmrf <- confusionMatrix(predictionB1, valid1$classe)
+cmrf
+
+
+plot(fit_rf,main="Accuracy of Random forest model by number of predictors")
+
+# Compute the variable importance 
+MostImpVars <- varImp(fit_rf)
+MostImpVars
+
+
+```
+
+With random forest, we reach an accuracy of 99.3% using cross-validation with 5 steps. This is very good. But let's see what we can expect with Gradient boosting.
+
+#### Gradient Boosting
+
+```{r}
+library(caret)
+fit_gbm <- train(classe~., data=train1, method="gbm", trControl=control, verbose=FALSE)
+print(fit_gbm)
+
+plot(fit_gbm)
+
+
+trainpred <- predict(fit_gbm,newdata=valid1)
+
+confMatGBM <- confusionMatrix(valid1$classe,trainpred)
+confMatGBM$overall[1]
+```
+Precision with 5 folds is 96%.
+
+#### Conclusion
+
+This shows that the random forest model is the best one. We use it to predict the values of classe for the test data set.
+
+```{r}
+(predict(fit_rf, testData))
+```
+
